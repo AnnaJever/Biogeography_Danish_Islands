@@ -12,50 +12,9 @@
 
 # create subset of saltwater islands with at least 10 m distance from the mainland for these calculations to keep the species pool consistent
 
-# analysis related to dispersal syndromes (figure3 & 4) are repeated including all islands (saltwater and sweet water islands), but with >10 m distance from the mainland
+# analysis related to dispersal syndromes (figure3) are repeated including all islands (saltwater and sweet water islands), but with >10 m distance from the mainland
 
 env3 <- env[env$distance > 10,]
-
-# build linear regressions
-m1          <-lm(log10(n.zoochor) ~ log10(area),data= env3)
-m2          <-lm(log10(n.meteorochor) ~ log10(area),data= env3)
-m3          <-lm(log10(n.nautochor) ~ log10(area),data= env3)
-m4          <-lm(log10(n.autochor) ~ log10(area),data= env3)
-
-# plot
-plot(log10(n.zoochor) ~ log10(area),
-     data= env3,xlab="Area (ha, log)",
-     ylab="Species richness (log)"
-     ,col="goldenrod", pch = 19)
-
-points(x = log10(env3$area), y = log10(env3$n.meteorochor),
-       col = "darkslategrey", pch = 19)
-points(x = log10(env3$area), y = log10(env3$n.nautochor),
-       col = "darkcyan", pch = 19)
-points(x = log10(env3$area), y = log10(env3$n.autochor),
-       col = "coral2", pch = 19)
-
-abline(m1, col = "goldenrod")
-abline(m2, col = "darkslategrey")
-abline(m3, col = "darkcyan")
-abline(m4, col = "coral2")
-
-mtext(text=bquote(Zoochory: italic(R)^2 == .(round(summary(m1)$adj.r, 2)) * .(star(lmp(m1)))),
-      line=-1.5,cex=0.8,
-      col="goldenrod",
-      side = 3, at=-1.5, adj = 0)
-mtext(text=bquote(Anemochory: italic(R)^2 == .(round(summary(m2)$adj.r, 2)) * .(star(lmp(m2)))),
-      line=-2.5,cex=0.8,
-      col="darkslategrey",
-      side = 3, at=-1.5, adj = 0)
-mtext(text=bquote(Hydrochory: italic(R)^2 == .(round(summary(m3)$adj.r, 2)) * .(star(lmp(m3)))),
-      line=-3.5,cex=0.8,
-      col="darkcyan",
-      side = 3, at=-1.5, adj = 0)
-mtext(text=bquote(Autochory: italic(R)^2 == .(round(summary(m4)$adj.r, 2)) * .(star(lmp(m4)))),
-      line=-4.5,cex=0.8,
-      col="coral2",
-      side = 3, at=-1.5, adj = 0)
 
 ## % dispersal syndrome in relationship with area and isolation ###
 
