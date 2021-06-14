@@ -143,3 +143,10 @@ plot_j <- ggplot(env3, aes(log10(distance), n.autochor)) +
   geom_point() +
   theme(panel.background = element_rect(fill = "NA", colour = "black"))+
   labs(x = "Distance (m, log)", y = "Autochory (%)")
+
+# Combine plots
+x11()
+grid.arrange(plot_a, plot_b, plot_c, plot_d, plot_e,
+             plot_f, plot_g, plot_h, plot_i, plot_j,
+             ncol=5)
+dev.off()
