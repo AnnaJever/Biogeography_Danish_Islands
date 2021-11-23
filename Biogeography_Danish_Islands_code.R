@@ -1,19 +1,22 @@
-### Island biogeography revisited: How dispersal characteristics shape the relationship of insular plant diversity with area and isolation on Danish islands
+### Plant dispersal characteristics shape the relationship of diversity with area and isolation
 
 ### Walentowitz et al.
 
-### last changes applied on 08. June 2021
+### last changes applied on 21. November 2021
+
+### Data analysis and visualization
 
 ### Data preparation ###
 
-# clearn work space and memory
+# clean work space and memory
 gc()
 rm(list = ls())
 
-# libraries
-require(tidyverse)
+# packages
 require(XLConnect)
+require(rcompanion)
 require(rms)
+require(tidyverse)
 require(gridExtra)
 require(vegan)
 
@@ -38,19 +41,20 @@ trait   <- readWorksheet(data, sheet = "trait", header = TRUE)
 
 # explanation of columns
 
-# table: env
+## table: env
 # nr = island specific ID
 # Name = island name
 # mainland = name of nearest mainland
 # distance = distance of island to the mainland
 # area = island area
-# saltwater = if island is located in saltwater (1) or sweetwater (0)
+# population = number of inhabitants
+# pop_density = number of inhabitants per ha (=human density)
 
-# table: species
+## table: species
 # names = species names
 # other column names: correspond to island id (1 indicates species presence and 0 absence)
 
-# table: trait
+## table: trait
 # X = project specific species ID
 # name = species name
 # following columns: dispersal syndrom and seed mass of species
@@ -61,9 +65,15 @@ str(trait) # check data type
 sum(!trait$name==spec$name) # should be zero, is zero
 trait$seed.mass <-as.numeric(trait$seed.mass) # make numeric
 
+
+#### Percentage small islands
+nrow(env[env$area < 10,])/nrow(env)*100 #39%
+
+
 ### Complementary calculations
 
-# spec nr. per island
+# species number per island
+
 env$nspec.new   <-colSums(spec[2:ncol(spec)]>0)
 
 # calculate community seed mass per island
@@ -82,7 +92,7 @@ trait$nautochor   <-as.numeric(trait$nautochor)
 trait$zoochor     <-as.numeric(trait$zoochor)
 trait[,c("autochor","meteorochor", "nautochor", "zoochor")]<-trait[,c("autochor","meteorochor", "nautochor", "zoochor")]/rowSums(trait[,c("autochor","meteorochor", "nautochor", "zoochor")],na.rm=T)
 
-# sums of species per island and dispersal syndrom
+# sums of species per island and dispersal syndrome
 head(trait)
 env$n.autochor    <-NA
 env$n.meteorochor <-NA
@@ -104,81 +114,144 @@ env$perc.zoochor      <-NA
 env[,c("perc.autochor","perc.meteorochor", "perc.nautochor", "perc.zoochor")]<-env[,c("n.autochor","n.meteorochor", "n.nautochor", "n.zoochor")]/rowSums(env[,c("n.autochor","n.meteorochor", "n.nautochor", "n.zoochor")])*100
 
 
-### Correlation area and isolation ###
-cor.test(env$area,env$distance) # 0.3, thus correlation negligible
+### Correlation area, isolation and human density
+cor(env[,c("area", "distance", "pop_density")])
+# highest is between area and isolation with 0.48
 
-### Plot area and isolation against spec richness with lm ###
 
-# linear model number of species ~ area (log-log space)
-lm_area <- lm(round(log10(nspec.new)) ~ round(log10(area)),data=env) # poisson; log
-summary(lm_area)
+### Log10 transformation of data
 
-# plot (figure 2a)
-plot_area <- ggplot(env, aes(x = log10(area), y = log10(nspec.new))) +
-  geom_point() +
-  geom_line(data = fortify(lm_area),
-            aes(x = round(log10(env$area)), y = .fitted))+
-  theme(panel.background = element_rect(fill = "NA", colour = "black"))+
-  annotate("text", x = 2, y = 3,
-           label= paste0("Adj. R² = ",
-                         round(summary(lm_area)$adj.r,
-                               digits = 2) , " ",
-                         star(summary(lm_area)$coefficients[8])))+
-  labs(x = "Area (ha, log10)", y = "Species richness (log10)")
+plotNormalHistogram(env$nspec.new)
+plotNormalHistogram(env$area)
+plotNormalHistogram(env$distance)
+plotNormalHistogram(env$pop_density)
+plotNormalHistogram(env$population)
 
-plot_area
+plotNormalHistogram(log10(env$nspec.new))
+plotNormalHistogram(log10(env$area))
+plotNormalHistogram(log10(env$distance))
+plotNormalHistogram(log10(env$pop_density + 0.000001))
+plotNormalHistogram(log10(env$population + 0.000001))
+
+env$nspec.new_log   <- log10(env$nspec.new)
+env$area_log        <- log10(env$area)
+env$distance_log    <- log10(env$distance)
+env$pop_density_log <- log10(env$pop_density + 0.000001)
+env$population_log  <- log10(env$population + 0.000001)
+
+
+### Multiple linear regression
+# multiple linear regression analysis explaining species richness per island with area + isolation + human density
+# selection of a glm with poisson family and poisson distribution as species number is count data
+
+glm_multi <- glm(nspec.new ~ area_log + distance_log + pop_density_log, data = env,
+                 family = poisson(link = "log"))
+
+summary(glm_multi)
+coef(glm_multi)
+plot(glm_multi)
+
+# check goodness of fit (chi-square test based on residual deviance and degrees of freedom)
+1 - pchisq(summary(glm_multi)$deviance, summary(glm_multi)$df.residual)
+# (has to be < 0.05)
+
+with(summary(glm_multi), 1 - deviance/null.deviance)
+# 0.85 # R²
 
 # check residuals for normality and heteroscedasticity
-hist(lm_area$residuals) # histogram of residuals
-cor(x = lm_area$residuals, y = env$area, method = "pearson") # cor. of residuals with area
+hist(glm_multi$residuals) # histogram of residuals
+cor(x = glm_multi$residuals, y = env$area_log, method = "pearson") # cor. of residuals with area
+cor(x = glm_multi$residuals, y = env$distance_log, method = "pearson") # cor. of residuals with area
+cor(x = glm_multi$residuals, y = env$pop_density_log, method = "pearson") # cor. of residuals with area
+# no strong correlations of residuals with explanatory variables
 
 
-# linear model number of species ~ isolation (log-log space)
-lm_iso <- lm(round(log10(nspec.new)) ~ round(log10(distance)),data=env[env$distance > 0,])
-summary(lm_iso)
+### Figure 2: Plot species richness against area, isolation and pop_density
 
-# plot (figure 2b)
-plot_iso <- ggplot(env[env$distance > 0,],
-                   aes(x = log10(distance), y = log10(nspec.new))) +
+#area
+pseudo_R_area  <- lrm(env$nspec.new~env$area_log)
+plot_area <- ggplot(env, aes(area_log, nspec.new)) +
   geom_point() +
-  geom_line(data = fortify(lm_iso),
-            aes(x = round(log10(env$distance[env$distance > 0])),
-                y = .fitted))+
+  geom_smooth(method = "glm", se = F, 
+              method.args = list(family = "poisson"),
+              colour = "black")+
   theme(panel.background = element_rect(fill = "NA", colour = "black"))+
-  annotate("text", x = 4, y = 3,
-           label= paste0("Adj. R² = ",
-                         round(summary(lm_iso)$adj.r, digits = 2), " ",
-                         star(summary(lm_iso)$coefficients[8])))+
-  labs(x = "Isolation (m, log10)", y = "Species richness (log10)")
+  annotate("text", x = 0, y = 600,
+           label= paste0("Pseud R² = ", round(pseudo_R_area$stats[["R2"]][1], digits = 2), " ", star(summary(glm_multi)$coefficients[14])))+
+  labs(x = "Area (ha, log)", y = "Species richness")
+plot_area
+
+# isolation
+pseudo_R_iso  <- lrm(env$nspec.new~env$distance_log)
+
+plot_iso <- ggplot(env, aes(distance_log, nspec.new)) +
+  geom_point() +
+  geom_smooth(method = "glm", se = F, 
+              method.args = list(family = "poisson"),
+              colour = "black")+
+  theme(panel.background = element_rect(fill = "NA", colour = "black"))+
+  annotate("text", x = 2, y = 600,
+           label= paste0("Pseud R² = ", round(pseudo_R_iso$stats[["R2"]][1], digits = 2), " ", star(summary(glm_multi)$coefficients[15])))+
+  labs(x = "Isolation (m, log)", y = "Species richness")
 
 plot_iso
 
-hist(lm_iso$residuals)
-cor(x = lm_iso$residuals, y = env$distance[env$distance > 0], method = "pearson") # cor. of residuals with area
+# pop_density
+pseudo_R_pop  <- lrm(env$nspec.new~env$pop_density_log)
 
-### Plot spec richness and dispersal syndromes ###
+plot_pop<- ggplot(env, aes(pop_density_log, nspec.new)) +
+  geom_point() +
+  geom_smooth(method = "glm", se = F, 
+              method.args = list(family = "poisson"),
+              colour = "black")+
+  theme(panel.background = element_rect(fill = "NA", colour = "black"))+
+  annotate("text", x = -4, y = 600,
+           label= paste0("Pseud R² = ", round(pseudo_R_pop$stats[["R2"]][1], digits = 2), " ", star(summary(glm_multi)$coefficients[15])))+
+  labs(x = "Population density (inhabitants/ha, log)", y = "Species richness")
 
-# create subset of saltwater islands with at least 10 m distance from the mainland for these calculations to keep the species pool consistent
+plot_pop
 
-env2        <-subset(env,env$saltwater==1 & env$distance>10)
+
+### Additional SAR calculation with Arrhenius function
+# make results of this study comparable to ther studies
+
+nspec <- env$nspec.new
+area <- as.numeric(env$area)
+
+# general plot
+plot(nspec ~ area,
+     xlab = "Island Area (ha)", ylab = "Number of Species",
+     ylim = c(1, max(nspec)),
+     col = "black",
+     pch = 16)
+
+xtmp <- seq(min(area), max(area), len=151)
+
+# The Arrhenius model
+marr <- nls(nspec ~ SSarrhenius(area, k, z))
+marr
+lines(xtmp, predict(marr, newdata=data.frame(area = xtmp)), lwd=2, col = "dodgerblue4")
+
+
+### Figure 3: Plot spec richness and dispersal syndromes
 
 # build linear regressions
-m1          <-lm(log10(n.zoochor) ~ log10(area),data= env2)
-m2          <-lm(log10(n.meteorochor) ~ log10(area),data= env2)
-m3          <-lm(log10(n.nautochor) ~ log10(area),data= env2)
-m4          <-lm(log10(n.autochor) ~ log10(area),data= env2)
+m1          <-lm(log10(n.zoochor) ~ area_log ,data= env)
+m2          <-lm(log10(n.meteorochor) ~ area_log, data= env)
+m3          <-lm(log10(n.nautochor) ~ area_log, data= env)
+m4          <-lm(log10(n.autochor) ~ area_log, data= env)
 
 # plot (figure 3)
-plot(log10(n.zoochor) ~ log10(area),
-     data= env2,xlab="Area (ha, log)",
+plot(log10(n.zoochor) ~ area_log,
+     data= env,xlab="Area (ha, log)",
      ylab="Species richness (log)"
      ,col="goldenrod", pch = 19)
 
-points(x = log10(env2$area), y = log10(env2$n.meteorochor),
+points(x = log10(env$area), y = log10(env$n.meteorochor),
        col = "darkslategrey", pch = 19)
-points(x = log10(env2$area), y = log10(env2$n.nautochor),
+points(x = log10(env$area), y = log10(env$n.nautochor),
        col = "darkcyan", pch = 19)
-points(x = log10(env2$area), y = log10(env2$n.autochor),
+points(x = log10(env$area), y = log10(env$n.autochor),
        col = "coral2", pch = 19)
 
 abline(m1, col = "goldenrod")
@@ -203,31 +276,32 @@ mtext(text=bquote(Autochory: italic(R)^2 == .(round(summary(m4)$adj.r, 2)) * .(s
       col="coral2",
       side = 3, at=-1.5, adj = 0)
 
-## % dispersal syndrome in relationship with area and isolation ###
+
+### Figure 4: % dispersal syndrome in relationship with area, isolation and human density
 
 # models and plot (figure 4)
 
 # a) area - seed weight (H1)
-fit_a <- glm(round(mean.seed.weight)~log10(area),data=env2,family=poisson())
+fit_a <- glm(round(mean.seed.weight)~log10(area),data=env,family=poisson())
 summary(fit_a)
-m_a_pseudoR2  <- lrm(round(env2$mean.seed.weight)~log10(env2$area))
+m_a_pseudoR2  <- lrm(round(env$mean.seed.weight)~log10(env$area))
 
-plot_a <- ggplot(env2, aes(log10(area), mean.seed.weight)) +
+plot_a <- ggplot(env, aes(log10(area), mean.seed.weight)) +
   geom_point() +
   geom_smooth(method = "glm", se = F, 
               method.args = list(family = "poisson"),
               colour = "black")+
   theme(panel.background = element_rect(fill = "NA", colour = "black"))+
-  annotate("text", x = 1, y = 60,
+  annotate("text", x = 1, y = 1000,
            label= paste0("Pseud R² = ", round(m_a_pseudoR2$stats[["R2"]][1], digits = 2), " ", star(summary(fit_a)$coefficients[8])))+
   labs(x = "Area (ha, log)", y = "Mean seed mass (mg)")
 
 # b) area - zoochory
-fit_b <- glm(round(perc.zoochor)~log10(area),data=env2,family=poisson())
+fit_b <- glm(round(perc.zoochor)~log10(area),data=env,family=poisson())
 summary(fit_b)
-m_b_pseudoR2  <- lrm(round(env2$perc.zoochor)~log10(env2$area))
+m_b_pseudoR2  <- lrm(round(env$perc.zoochor)~log10(env$area))
 
-plot_b <- ggplot(env2, aes(log10(area), perc.zoochor)) +
+plot_b <- ggplot(env, aes(log10(area), perc.zoochor)) +
   geom_point() +
   geom_smooth(method = "glm", se = F, 
               method.args = list(family = "poisson"),
@@ -238,11 +312,11 @@ plot_b <- ggplot(env2, aes(log10(area), perc.zoochor)) +
   labs(x = "Area (ha, log)", y = "Zoochory (%)")
 
 # c) area - hydrochory
-fit_c <- glm(round(perc.nautochor)~log10(area),data=env2,family=poisson())
+fit_c <- glm(round(perc.nautochor)~log10(area),data=env,family=poisson())
 summary(fit_c)
-m_c_pseudoR2  <- lrm(round(env2$perc.nautochor)~log10(env2$area))
+m_c_pseudoR2  <- lrm(round(env$perc.nautochor)~log10(env$area))
 
-plot_c <- ggplot(env2, aes(log10(area), perc.nautochor)) +
+plot_c <- ggplot(env, aes(log10(area), perc.nautochor)) +
   geom_point() +
   geom_smooth(method = "glm", se = F, 
               method.args = list(family = "poisson"),
@@ -253,157 +327,157 @@ plot_c <- ggplot(env2, aes(log10(area), perc.nautochor)) +
   labs(x = "Area (ha, log)", y = "Hydrochory (%)")
 
 # d) area - anemochory
-fit_d <- glm(round(perc.meteorochor)~log10(area),data=env2,family=poisson())
+fit_d <- glm(round(perc.meteorochor)~log10(area),data=env,family=poisson())
 summary(fit_d)
-m_d_pseudoR2  <- lrm(round(env2$perc.meteorochor)~log10(env2$area))
+m_d_pseudoR2  <- lrm(round(env$perc.meteorochor)~log10(env$area))
 
-plot_d <- ggplot(env2, aes(log10(area), perc.meteorochor)) +
+plot_d <- ggplot(env, aes(log10(area), perc.meteorochor)) +
   geom_point() +
-  geom_smooth(method = "glm", se = F, 
-              method.args = list(family = "poisson"),
-              colour = "black")+
   theme(panel.background = element_rect(fill = "NA", colour = "black"))+
-  annotate("text", x = 1, y = 15,
-           label= paste0("Pseud R² = ", round(m_d_pseudoR2$stats[["R2"]][1], digits = 2), " ", star(summary(fit_d)$coefficients[8])))+
   labs(x = "Area (ha, log)", y = "Anemochory (%)")
 
 # e) area - autochory
-fit_e <- glm(round(perc.autochor)~log10(area),data=env2,family=poisson())
+fit_e <- glm(round(perc.autochor)~log10(area),data=env,family=poisson())
 summary(fit_e)
-m_e_pseudoR2  <- lrm(round(env2$perc.autochor)~log10(env2$area))
+m_e_pseudoR2  <- lrm(round(env$perc.autochor)~log10(env$area))
 
-plot_e <- ggplot(env2, aes(log10(area), perc.autochor)) +
-  geom_point() +
-  theme(panel.background = element_rect(fill = "NA", colour = "black"))+
-  labs(x = "Area (ha, log)", y = "Autochory (%)")
-
-# f) isolation - seed weight (H1)
-fit_f <- glm(round(mean.seed.weight)~log10(distance),data=env2,family=poisson())
-summary(fit_f)
-m_f_pseudoR2  <- lrm(round(env2$mean.seed.weight)~log10(env2$distance))
-
-plot_f <- ggplot(env2, aes(log10(distance), mean.seed.weight)) +
+plot_e <- ggplot(env, aes(log10(area), perc.autochor)) +
   geom_point() +
   geom_smooth(method = "glm", se = F,
               method.args = list(family = "poisson"),
               colour = "black")+
   theme(panel.background = element_rect(fill = "NA", colour = "black"))+
-  annotate("text", x = 2.3, y = 50,
+  annotate("text", x = 1, y = 15,
+           label= paste0("Pseud R² = ", round(m_e_pseudoR2$stats[["R2"]][1], digits = 2), " ", star(summary(fit_e)$coefficients[8])))+
+  labs(x = "Area (ha, log)", y = "Autochory (%)")
+
+# f) isolation - seed weight (H1)
+fit_f <- glm(round(mean.seed.weight)~log10(distance),data=env,family=poisson())
+summary(fit_f)
+m_f_pseudoR2  <- lrm(round(env$mean.seed.weight)~log10(env$distance))
+
+plot_f <- ggplot(env, aes(log10(distance), mean.seed.weight)) +
+  geom_point() +
+  geom_smooth(method = "glm", se = F,
+              method.args = list(family = "poisson"),
+              colour = "black")+
+  theme(panel.background = element_rect(fill = "NA", colour = "black"))+
+  annotate("text", x = 2.3, y = 1000,
            label= paste0("Pseud R² = ", round(m_f_pseudoR2$stats[["R2"]][1], digits = 3), " ", star(summary(fit_f)$coefficients[8])))+
   labs(x = "Distance (m, log)", y = "Mean seed mass (mg)")
 
 # g) isolation - zoochory
-fit_g <- glm(round(perc.zoochor)~log10(distance),data=env2,family=poisson())
+fit_g <- glm(round(perc.zoochor)~log10(distance),data=env,family=poisson())
 summary(fit_g)
 
-plot_g <- ggplot(env2, aes(log10(distance), perc.zoochor)) +
+plot_g <- ggplot(env, aes(log10(distance), perc.zoochor)) +
   geom_point()+
   theme(panel.background = element_rect(fill = "NA", colour = "black"))+
   labs(x = "Distance (m, log))", y = "Zoochory (%)")
 
 # h) isolation - hydrochory
-fit_h <- glm(round(perc.nautochor)~log10(distance),data=env2,family=poisson())
+fit_h <- glm(round(perc.nautochor)~log10(distance),data=env,family=poisson())
 summary(fit_h)
 
-plot_h <- ggplot(env2, aes(log10(distance), perc.nautochor)) +
+plot_h <- ggplot(env, aes(log10(distance), perc.nautochor)) +
   geom_point() +
   theme(panel.background = element_rect(fill = "NA", colour = "black"))+
   labs(x = "Distance (m, log)", y = "Hydrochory (%)")
 
 # i) isolation - anemochory
-fit_i <- glm(round(perc.meteorochor)~log10(distance),data=env2,family=poisson())
+fit_i <- glm(round(perc.meteorochor)~log10(distance),data=env,family=poisson())
 summary(fit_i)
 
-plot_i <- ggplot(env2, aes(log10(distance), perc.meteorochor)) +
+plot_i <- ggplot(env, aes(log10(distance), perc.meteorochor)) +
   geom_point() +
   theme(panel.background = element_rect(fill = "NA", colour = "black"))+
   labs(x = "Distance (m, log)", y = "Anemochory (%)")
 
 # j) isolation - autochory
-fit_j <- glm(round(perc.autochor)~log10(distance),data=env2,family=poisson())
+fit_j <- glm(round(perc.autochor)~log10(distance),data=env,family=poisson())
 summary(fit_j)
 
-plot_j <- ggplot(env2, aes(log10(distance), perc.autochor)) +
+plot_j <- ggplot(env, aes(log10(distance), perc.autochor)) +
   geom_point() +
   theme(panel.background = element_rect(fill = "NA", colour = "black"))+
   labs(x = "Distance (m, log)", y = "Autochory (%)")
 
-# Combine plots
+# k) population density - seed weight
+
+fit_k <- glm(round(mean.seed.weight)~ pop_density_log ,data=env,family=poisson())
+summary(fit_k)
+m_k_pseudoR2  <- lrm(round(env$mean.seed.weight)~env$pop_density_log)
+
+plot_k <- ggplot(env, aes(pop_density_log, mean.seed.weight)) +
+  geom_point() +
+  geom_smooth(method = "glm", se = F, 
+              method.args = list(family = "poisson"),
+              colour = "black")+
+  theme(panel.background = element_rect(fill = "NA", colour = "black"))+
+  annotate("text", x = -4, y = 1000,
+           label= paste0("Pseud R² = ", round(m_k_pseudoR2$stats[["R2"]][1], digits = 2), " ", star(summary(fit_k)$coefficients[8])))+
+  labs(x = "Pop. density (people/ha, log)", y = "Mean seed mass (mg)")
+
+# l) population density - zoochory
+
+fit_l <- glm(round(perc.zoochor)~ pop_density_log ,data=env,family=poisson())
+summary(fit_l)
+m_l_pseudoR2  <- lrm(round(env$perc.zoochor)~env$pop_density_log)
+
+plot_l <- ggplot(env, aes(pop_density_log, perc.zoochor)) +
+  geom_point() +
+  theme(panel.background = element_rect(fill = "NA", colour = "black"))+
+  labs(x = "Pop. density (people/ha, log)", y = "Zoochory (%)")
+
+# m) population density - hydrochory
+
+fit_m <- glm(round(perc.nautochor)~ pop_density_log ,data=env,family=poisson())
+summary(fit_m)
+m_m_pseudoR2  <- lrm(round(env$perc.nautochor)~env$pop_density_log)
+
+plot_m <- ggplot(env, aes(pop_density_log, perc.nautochor)) +
+  geom_point() +
+  geom_smooth(method = "glm", se = F, 
+              method.args = list(family = "poisson"),
+              colour = "black")+
+  theme(panel.background = element_rect(fill = "NA", colour = "black"))+
+  annotate("text", x = -4, y = 60,
+           label= paste0("Pseud R² = ", round(m_m_pseudoR2$stats[["R2"]][1], digits = 2), " ", star(summary(fit_m)$coefficients[8])))+
+  labs(x = "Pop. density (people/ha, log)", y = "Hydrochory (%)")
+
+# n) population density - anemochory
+
+fit_n <- glm(round(perc.meteorochor)~ pop_density_log ,data=env,family=poisson())
+summary(fit_n)
+m_n_pseudoR2  <- lrm(round(env$perc.meteorochor)~env$pop_density_log)
+
+plot_n <- ggplot(env, aes(pop_density_log, perc.meteorochor)) +
+  geom_point() +
+  geom_smooth(method = "glm", se = F, 
+              method.args = list(family = "poisson"),
+              colour = "black")+
+  theme(panel.background = element_rect(fill = "NA", colour = "black"))+
+  annotate("text", x = -4, y = 60,
+           label= paste0("Pseud R² = ", round(m_n_pseudoR2$stats[["R2"]][1], digits = 2), " ", star(summary(fit_n)$coefficients[8])))+
+  labs(x = "Pop. density (people/ha, log)", y = "Anemochory (%)")
+
+# o) population density - autochory
+
+fit_o <- glm(round(perc.autochor)~ pop_density_log ,data=env,family=poisson())
+summary(fit_o)
+m_o_pseudoR2  <- lrm(round(env$perc.autochor)~env$pop_density_log)
+
+plot_o <- ggplot(env, aes(pop_density_log, perc.autochor)) +
+  geom_point() +
+  theme(panel.background = element_rect(fill = "NA", colour = "black"))+
+  labs(x = "Pop. density (people/ha, log)", y = "Autochory (%)")
+
+# Multipanel plot
 x11()
 grid.arrange(plot_a, plot_b, plot_c, plot_d, plot_e,
              plot_f, plot_g, plot_h, plot_i, plot_j,
+             plot_k, plot_l, plot_m, plot_n, plot_o,
              ncol=5)
 dev.off()
 
-### Appendix ###
-
-## Figure S1
-# Species Area Relationship
-
-nspec <- env$nspec.new
-area <- env$area
-
-# general plot
-
-plot(nspec ~ area,
-     xlab = "Island Area (ha)", ylab = "Number of Species",
-     ylim = c(1, max(nspec)),
-     col = "black",
-     pch = 16)
-
-xtmp <- seq(min(area), max(area), len=151)
-
-## The Arrhenius model
-marr <- nls(nspec ~ SSarrhenius(area, k, z))
-marr
-lines(xtmp, predict(marr, newdata=data.frame(area = xtmp)), lwd=2, col = "dodgerblue4")
-
-## Gleason: log-linear
-mgle <- nls(nspec ~ SSgleason(area, k, slope))
-lines(xtmp, predict(mgle, newdata=data.frame(area=xtmp)),
-      lwd=2, col= "salmon")
-
-## loglog
-mloglog <- lm(log(nspec) ~ log(area))
-mloglog
-lines(xtmp, exp(predict(mloglog, newdata=data.frame(area=xtmp))),
-      lwd=2, col = "goldenrod")
-
-## Gitay: quadratic of log-linear
-mgit <- nls(nspec ~ SSgitay(area, k, slope))
-lines(xtmp, predict(mgit, newdata=data.frame(area=xtmp)), 
-      lwd=2, col = "yellowgreen")
-
-## Lomolino: using original names of the parameters (Lomolino 2000):
-mlom <- nls(nspec ~ SSlomolino(area, Smax, A50, Hill))
-mlom
-lines(xtmp, predict(mlom, newdata=data.frame(area=xtmp)), 
-      lwd=2, col = "tomato4")
-
-## Michaelis-Menten
-mmic <- nls(nspec ~ SSmicmen(area, slope, Asym))
-lines(xtmp, predict(mmic, newdata = data.frame(area=xtmp)),
-      lwd =2, col = "cadetblue4")
-
-legend("bottomright", c("Arrhenius", "Gleason", "log-log linear", "Gitay", 
-                        "Lomolino", "Michaelis-Menten"),
-       col=c("dodgerblue4","salmon","goldenrod","yellowgreen","tomato4","cadetblue4"),
-       lwd=c(2,2,2,2,2,2), 
-       lty=c(1,1,1,1,1,1))
-
-## compare models (AIC)
-allmods <- list(Arrhenius = marr,
-                Gleason = mgle,
-                logloglin = mloglog,
-                Gitay = mgit, 
-                Lomolino = mlom,
-                MicMen= mmic)
-sapply(allmods, AIC)
-
-# par(mfrow = c(3,2))
-hist(marr$m$resid())
-hist(mgle$m$resid())
-hist(mloglog$residuals)
-hist(mgit$m$resid())
-hist(mlom$m$resid())
-hist(mmic$m$resid())
+### end
